@@ -1,0 +1,29 @@
+# ML artifacts
+*.index
+*.npy
+dataset/
+checkpoints/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Env
+.env
+
+# Local/private files
+.claude/
+*.pem
+
+# ZabGPT vector DB
+zabgpt/chroma_db/
+
+# Frontend
+web/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
