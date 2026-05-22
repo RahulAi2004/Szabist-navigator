@@ -349,10 +349,11 @@ if __name__ == "__main__":
     import os
     cert = os.path.join(BASE_DIR, "cert.pem")
     key  = os.path.join(BASE_DIR, "key.pem")
+    port = int(os.environ.get("FLASK_PORT", "5000"))
     if os.path.exists(cert) and os.path.exists(key):
-        logger.info("Vision Navigator API  v%s  -> https://0.0.0.0:5000", API_VERSION)
-        flask_app.run(host="0.0.0.0", port=5000, debug=False, threaded=True,
+        logger.info("Vision Navigator API  v%s  -> https://0.0.0.0:%s", API_VERSION, port)
+        flask_app.run(host="0.0.0.0", port=port, debug=False, threaded=True,
                       ssl_context=(cert, key))
     else:
-        logger.info("Vision Navigator API  v%s  -> http://0.0.0.0:5000", API_VERSION)
-        flask_app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
+        logger.info("Vision Navigator API  v%s  -> http://0.0.0.0:%s", API_VERSION, port)
+        flask_app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

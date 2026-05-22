@@ -10,25 +10,37 @@ import logging
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Edit these values once you have real survey data.
-# Origin = Main Gate.  X = east (metres), Y = north (metres), floor 0 = ground.
+# Coordinates derived from campus map pixel positions (scale ≈ 0.3 m/px).
+# X = east (metres), Y = south (metres), floor 0 = ground, floor 1 = first.
 # ---------------------------------------------------------------------------
 NODE_COORDS: Dict[str, Dict] = {
-    "Cafe":         {"x":  0.0, "y":  0.0, "floor": 0},
-    "Courtyard":    {"x": 20.0, "y": 30.0, "floor": 0},
-    "FountainArea": {"x": 35.0, "y": 50.0, "floor": 0},
-    "helmetarea":   {"x": 50.0, "y": 20.0, "floor": 0},
-    "SSC":          {"x": 15.0, "y": 70.0, "floor": 1},
-    "stairs":       {"x": 25.0, "y": 60.0, "floor": 0},
+    "FountainArea":     {"x":  56, "y":  50, "floor": 0},
+    "LostAndFound":     {"x": 101, "y":  29, "floor": 0},
+    "helmetarea":       {"x":  24, "y":  75, "floor": 0},
+    "Cafe":             {"x":  27, "y": 150, "floor": 0},
+    "SSC":              {"x":  21, "y": 228, "floor": 1},
+    "100Entrance":      {"x":  77, "y": 156, "floor": 0},
+    "ReceptionBackside":{"x": 110, "y": 102, "floor": 0},
+    "Courtyard":        {"x": 122, "y": 168, "floor": 0},
+    "stairs":           {"x":  93, "y": 228, "floor": 0},
+    "PattiArea":        {"x":  72, "y": 252, "floor": 0},
+    "Mosque":           {"x": 137, "y": 258, "floor": 0},
+    "FirstAidRoom":     {"x":  18, "y": 235, "floor": 1},
 }
 
 NODE_LABELS: Dict[str, str] = {
-    "Cafe":         "Canteen",
-    "Courtyard":    "Courtyard",
-    "FountainArea": "Fountain Area",
-    "helmetarea":   "Helmet Area",
-    "SSC":          "SSC Room",
-    "stairs":       "Main Gate / 100 Door",
+    "FountainArea":     "Fountain Area",
+    "LostAndFound":     "Lost & Found",
+    "helmetarea":       "Helmet Area",
+    "Cafe":             "Canteen",
+    "SSC":              "SSC Room",
+    "100Entrance":      "Classrooms",
+    "ReceptionBackside":"Reception (Backyard)",
+    "Courtyard":        "Courtyard",
+    "stairs":           "Stairs",
+    "PattiArea":        "Stationary Shop",
+    "Mosque":           "Mosque",
+    "FirstAidRoom":     "First Aid Room",
 }
 
 # Penalty added to heuristic per floor change (metres equivalent)
@@ -46,14 +58,20 @@ class CampusGraph:
         Graph structure: {location: [(neighbor, distance), ...]}
         Distances are approximate meters between locations
         """
+        # Distances computed from map pixel coordinates (scale ≈ 0.3 m/px), rounded to 5 m.
         self.graph = {
-            # Location: [(neighbor_location, distance_in_meters), ...]
-            "Cafe": [("Courtyard", 150), ("SSC", 200), ("stairs", 300)],
-            "Courtyard": [("Cafe", 150), ("FountainArea", 100), ("SSC", 180), ("helmetarea", 250)],
-            "FountainArea": [("Courtyard", 100), ("helmetarea", 120), ("Cafe", 220)],
-            "helmetarea": [("FountainArea", 120), ("Courtyard", 250), ("stairs", 180), ("SSC", 280)],
-            "SSC": [("Cafe", 200), ("Courtyard", 180), ("helmetarea", 280), ("stairs", 150)],
-            "stairs": [("SSC", 150), ("helmetarea", 180), ("Cafe", 300)],
+            "FountainArea":     [("helmetarea", 40),  ("LostAndFound", 50)],
+            "LostAndFound":     [("FountainArea", 50), ("ReceptionBackside", 75)],
+            "helmetarea":       [("FountainArea", 40), ("Cafe", 75)],
+            "Cafe":             [("helmetarea", 75),  ("SSC", 80),  ("100Entrance", 50)],
+            "SSC":              [("Cafe", 80),         ("PattiArea", 55), ("FirstAidRoom", 20)],
+            "100Entrance":      [("Cafe", 50),         ("ReceptionBackside", 65), ("Courtyard", 45), ("stairs", 75)],
+            "ReceptionBackside":[("LostAndFound", 75), ("100Entrance", 65), ("Courtyard", 65)],
+            "Courtyard":        [("ReceptionBackside", 65), ("100Entrance", 45), ("Mosque", 90)],
+            "stairs":           [("100Entrance", 75), ("PattiArea", 30)],
+            "PattiArea":        [("SSC", 55),          ("stairs", 30),  ("Mosque", 65)],
+            "Mosque":           [("Courtyard", 90),    ("PattiArea", 65)],
+            "FirstAidRoom":     [("SSC", 20)],
         }
 
         # Build (x, y) coordinate map from NODE_COORDS for the heuristic

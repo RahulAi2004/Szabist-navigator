@@ -3,6 +3,7 @@ DINOv2 embedding model handling
 """
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 from pathlib import Path
@@ -148,3 +149,73 @@ class DINOv2Embedder:
             embedding = self.model(image_tensor)
         embedding = F.normalize(embedding, p=2, dim=1)
         return embedding.cpu().numpy().astype(np.float32)[0]
+
+
+class FinetunedDINOv2Classifier:
+    """
+    Fine-tuned DINOv2 + classification head loaded from checkpoints/.
+    Architecture: DINOv2 ViT-S/14 backbone (frozen) -> BatchNorm1d(384) -> Linear(384, 12)
+    """
+
+    def __init__(self, checkpoint_path: Union[str, Path]):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        checkpoint_path = Path(checkpoint_path)
+
+        logger.info(f"Loading fine-tuned DINOv2 classifier from {checkpoint_path}")
+        ckpt = torch.load(checkpoint_path, map_location="cpu")
+
+        self.idx_to_class: dict = ckpt["idx_to_class"]
+        self.class_names: list  = ckpt["class_names"]
+        self.num_classes: int   = ckpt["num_classes"]
+
+        # Rebuild backbone
+        self.backbone = torch.hub.load("facebookresearch/dinov2", ckpt["backbone_name"])
+        backbone_sd = {k[len("backbone."):]: v
+                       for k, v in ckpt["model_state_dict"].items()
+                       if k.startswith("backbone.")}
+        self.backbone.load_state_dict(backbone_sd)
+        self.backbone.eval().to(self.device)
+
+        # Rebuild classifier: LayerNorm(384) + Linear(384, num_classes)
+        embed_dim = ckpt["embedding_dim"]
+        self.classifier = nn.Sequential(
+            nn.LayerNorm(embed_dim),
+            nn.Linear(embed_dim, self.num_classes),
+        )
+        classifier_sd = {k[len("classifier."):]: v
+                         for k, v in ckpt["model_state_dict"].items()
+                         if k.startswith("classifier.")}
+        self.classifier.load_state_dict(classifier_sd)
+        self.classifier.eval().to(self.device)
+
+        self.transform = transforms.Compose([
+            transforms.Resize(256, interpolation=transforms.InterpolationMode.BICUBIC),
+            transforms.CenterCrop(ckpt["image_size"]),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406),
+                                 std=(0.229, 0.224, 0.225)),
+        ])
+
+        logger.info(f"Fine-tuned classifier ready — {self.num_classes} classes, "
+                    f"val_acc={ckpt.get('best_val_acc', '?'):.3f}")
+
+    def predict_from_pil(self, pil_image: Image.Image) -> dict:
+        """Return predicted location, confidence, and full probability dict."""
+        tensor = self.transform(pil_image.convert("RGB")).unsqueeze(0).to(self.device)
+        with torch.no_grad():
+            embedding = self.backbone(tensor)          # (1, 384)
+            logits    = self.classifier(embedding)     # (1, 12)
+            probs     = F.softmax(logits, dim=1)[0]   # (12,)
+
+        top_idx    = int(probs.argmax())
+        location   = self.idx_to_class[top_idx]
+        confidence = float(probs[top_idx])
+
+        all_probs = {self.idx_to_class[i]: float(probs[i])
+                     for i in range(self.num_classes)}
+
+        return {
+            "location":   location,
+            "confidence": confidence,
+            "all_probs":  all_probs,
+        }

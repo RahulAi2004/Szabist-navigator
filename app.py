@@ -18,7 +18,7 @@ from config import (
     INDEX_FILE, LABELS_FILE, METADATA_FILE, TOP_K, DISTANCE_THRESHOLD,
     MODEL_NAME, DEVICE, EMBEDDING_DIM, PATHFINDING_HEURISTIC_WEIGHT
 )
-from embedding_model import DINOv2Embedder
+from embedding_model import DINOv2Embedder, FinetunedDINOv2Classifier
 from faiss_index import FAISSIndex
 from pathfinding import CampusGraph, AStarPathfinder
 from data_loader import DataLoader
@@ -46,6 +46,7 @@ class CampusNavigationApp:
         self.index_dir = index_dir or BASE_DIR
         self.embedder = None
         self.faiss_index = None
+        self.classifier = None   # fine-tuned DINOv2 classifier (12 classes)
         self.pathfinder = None
         self.data_loader = None
         
@@ -55,7 +56,15 @@ class CampusNavigationApp:
         """Initialize all components"""
         logger.info("Initializing Campus Navigation App...")
         
-        # Initialize embedder
+        # Try fine-tuned classifier first; fall back to raw DINOv2 + FAISS
+        checkpoint = BASE_DIR / "checkpoints" / "best_finetuned_dinov2.pth"
+        if checkpoint.exists():
+            logger.info("Loading fine-tuned DINOv2 classifier (12 classes)...")
+            self.classifier = FinetunedDINOv2Classifier(checkpoint)
+        else:
+            logger.warning("Fine-tuned checkpoint not found — falling back to DINOv2+FAISS")
+
+        # Always load raw embedder (used by FAISS fallback and calibration voting)
         logger.info("Loading DINOv2 embedder...")
         self.embedder = DINOv2Embedder(model_name=MODEL_NAME, device=DEVICE)
         
@@ -254,8 +263,22 @@ class CampusNavigationApp:
         return result
     
     def identify_from_pil(self, pil_image, use_voting: bool = True) -> Dict:
-        """Identify location from a PIL Image (in-memory, no disk I/O)."""
+        """Identify location from a PIL Image (in-memory, no disk I/O).
+
+        Uses the fine-tuned 12-class classifier when available;
+        falls back to DINOv2 + FAISS for the original 6 classes.
+        """
         try:
+            if self.classifier is not None:
+                pred = self.classifier.predict_from_pil(pil_image)
+                return {
+                    "location":   pred["location"],
+                    "confidence": pred["confidence"],
+                    "all_probs":  pred["all_probs"],
+                    "model":      "finetuned",
+                }
+
+            # FAISS fallback
             query_embedding = self.embedder.get_embedding_from_pil(pil_image)
             if query_embedding is None:
                 return {"error": "Failed to generate embedding"}
@@ -265,6 +288,7 @@ class CampusNavigationApp:
                 "top_5_matches": neighbors[:5],
                 "distances":     distances[:5].tolist(),
                 "raw_distances": distances[:5].tolist(),
+                "model":         "faiss",
             }
 
             if use_voting:
