@@ -15,7 +15,7 @@ async function _req(path, options = {}) {
   try {
     res = await fetch(API_BASE + path, { ...options, headers });
   } catch (err) {
-    throw new Error("Cannot reach server — is Flask running on :5000?");
+    throw new Error("Cannot reach server (" + err.message + ")");
   }
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);

@@ -275,28 +275,32 @@ def calibrate():
     }), 200
 
 
+_zabgpt_nav = None  # cached singleton — avoids slow ChromaDB reload on every request
+
 @flask_app.route("/api/zabgpt", methods=["POST"])
 def zabgpt():
     """Proxy to ZabGPT RAG pipeline."""
+    global _zabgpt_nav
     data = request.get_json()
     if not data or "query" not in data:
         return jsonify({"error": "Provide {query}"}), 400
 
     try:
-        zabgpt_dir = BASE_DIR / "zabgpt"
-        if str(zabgpt_dir) not in sys.path:
-            sys.path.insert(0, str(zabgpt_dir))
+        if _zabgpt_nav is None:
+            zabgpt_dir = BASE_DIR / "zabgpt"
+            if str(zabgpt_dir) not in sys.path:
+                sys.path.insert(0, str(zabgpt_dir))
+            from dotenv import load_dotenv
+            load_dotenv(zabgpt_dir / ".env", override=True)
+            from src.rag import VisionNavigator  # type: ignore
+            _zabgpt_nav = VisionNavigator()
+            logger.info("ZabGPT VisionNavigator initialised and cached.")
 
-        # Load ZabGPT .env (GROQ_API_KEY lives here)
-        from dotenv import load_dotenv
-        load_dotenv(zabgpt_dir / ".env", override=True)
-
-        from src.rag import VisionNavigator  # type: ignore
-        nav = VisionNavigator()
-        result = nav.ask(data["query"])
+        result = _zabgpt_nav.ask(data["query"])
         return jsonify(result), 200
     except Exception as e:
         logger.error(f"ZabGPT error: {e}")
+        _zabgpt_nav = None  # reset on error so next request retries init
         return jsonify({"error": str(e)}), 500
 
 
